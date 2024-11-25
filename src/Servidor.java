@@ -16,11 +16,27 @@ public class Servidor {
         Dinamo api = new Dinamo();
         api.openSession(hsmIp, hsmUser, hsmUserPassword);
 
-        // Gera a chave assimétrica no HSM
-        String keyIdServer = "key_server";
-        byte[] publicKeyServer = api.genEcdhKey(0, keyIdServer, new byte[0]);  // Passando um vetor vazio
-        /System.out.println("Chave pública do servidor: " + new String(publicKeyServer));
+        String keyIdServer = "key007";
 
+
+        api.createKey("key007", TacNDJavaLib.ALG_RSA_4096);
+        //System.out.println("ESTOU AQUI");
+
+        // Gera a chave assimétrica no HSM
+        //String keyIdServer = "kkeyK";
+        /*byte[] publicKeyServer = api.genEcdhKeyX963(
+            TacNDJavaLib.DN_GEN_KEY_X9_63_SHA256,                  // Operação de geração de chave
+            keyIdServer,        // Identificador da chave privada do servidor
+            null,               // Não é necessário chave pública do outro lado para geração
+            TacNDJavaLib.ALG_AES_256, // Algoritmo da chave
+            TacNDJavaLib.ALG_AES_256, // Atributos da chave
+            null,               // Chave pública do cliente (ainda não disponível)
+            null,               // Dados de derivação de chave (geralmente null ou empty)
+            0                   // Flags de controle (geralmente 0)
+            );*/
+            
+        byte[] publicKeyServer = api.genEcdhKey(TacNDJavaLib.ALG_RSA_4096_PUB, "key007", new byte[4096]);  // Passando um vetor vazio
+        //System.out.println("Chave pública do servidor: " + new String(publicKeyServer));
 
         // Configura o servidor
         ServerSocket serverSocket = new ServerSocket(5000);
@@ -45,8 +61,8 @@ public class Servidor {
         System.arraycopy(secretShared, 0, keySymmetric, 0, 32);
 
         // Envia a chave pública do servidor ou C1 (no caso de KEM) para o cliente
-        //out.writeInt(publicKeyServer.length);
-        //out.write(publicKeyServer);
+        out.writeInt(publicKeyServer.length);
+        out.write(publicKeyServer);
         out.flush();
 
         // Envia a mensagem cifrada (C2) para o cliente utilizando a chave simétrica K
@@ -69,5 +85,7 @@ public class Servidor {
         // Fecha a conexão
         clientSocket.close();
         serverSocket.close();
+
+        
     }
 }
