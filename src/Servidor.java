@@ -1,66 +1,55 @@
+import com.dinamonetworks.Dinamo;
+import com.dinamonetworks.TacException;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
-import javax.crypto.*;
+import java.util.Arrays;
+import java.net.*;
+import java.io.*;
 import com.dinamonetworks.*;
 import br.com.trueaccess.*;
 
 public class Servidor {
+    static String hsmIp = "187.33.9.132";
+    static String hsmUser = "utfpr1";
+    static String hsmUserPassword = "segcomp20241";
 
-    private HSMClient hsmClient;
+    public static void main(String[] args) throws TacException, IOException {
+        // Inicia a conexão com o HSM
+        Dinamo api = new Dinamo();
+        api.openSession(hsmIp, hsmUser, hsmUserPassword);
 
-    public Servidor() throws Exception {
-        // Inicializar o cliente HSM
-        this.hsmClient = new HSMClient();
-    }
+        // Cria uma chave AES no HSM
+        String keyId = "key_aes_example";
+        api.createKey(keyId, TacNDJavaLib.ALG_AES_256);
 
-    public KeyPair gerarParDeChavesAssimetricas() throws Exception {
-        return hsmClient.generateKeyPair();
-    }
+        // Configura o servidor
+        ServerSocket serverSocket = new ServerSocket(5000);
+        System.out.println("Servidor aguardando conexões na porta 5000...");
+        Socket clientSocket = serverSocket.accept();
+        System.out.println("Cliente conectado!");
 
-    public byte[] encapsularChavePublica(Key publicKey) throws Exception {
-        return hsmClient.encapsulateKey(publicKey);
-    }
+        DataInputStream in = new DataInputStream(clientSocket.getInputStream());
+        DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
 
-    public SecretKey derivarChaveSimetrica(byte[] sharedSecret) throws Exception {
-        MessageDigest hash = MessageDigest.getInstance("SHA-256");
-        byte[] keyBytes = hash.digest(sharedSecret);
-        return new SecretKeySpec(Arrays.copyOf(keyBytes, 16), "AES");
-    }
+        // Recebe a mensagem do cliente
+        int length = in.readInt();
+        byte[] mensagemRecebida = new byte[length];
+        in.readFully(mensagemRecebida);
 
-    public byte[] cifrarMensagemSimetrica(SecretKey key, byte[] message) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES");
-        cipher.init(Cipher.ENCRYPT_MODE, key);
-        return cipher.doFinal(message);
-    }
+        // Criptografa a mensagem com a chave AES
+        byte[] iv = new byte[16];  // IV simples com zeros
+        byte[] mensagemCifrada = api.encrypt(keyId, mensagemRecebida, iv, TacNDJavaLib.D_PKCS5_PADDING, TacNDJavaLib.MODE_CBC);
 
-    public byte[] decifrarMensagemSimetrica(SecretKey key, byte[] cipherText) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES");
-        cipher.init(Cipher.DECRYPT_MODE, key);
-        return cipher.doFinal(cipherText);
-    }
+        // Envia a mensagem cifrada de volta ao cliente
+        out.writeInt(mensagemCifrada.length);
+        out.write(mensagemCifrada);
+        out.flush();
 
-    public static void main(String[] args) throws Exception {
-        Servidor servidor = new Servidor();
+        // Fecha a conexão
+        clientSocket.close();
+        serverSocket.close();
 
-        // Gerar par de chaves assimétricas
-        KeyPair keyPairServidor = servidor.gerarParDeChavesAssimetricas();
-
-        // Receber chave pública do cliente
-        // Simulação: Aqui você implementaria a lógica para receber a chave pública via rede
-
-        // Executar KEM/KEX com a chave pública do cliente
-        byte[] chaveEncapsulada = servidor.encapsularChavePublica(keyPairServidor.getPublic());
-
-        // Enviar a chave encapsulada ou pública para o cliente
-        // Simulação: Enviar resposta para o cliente
-
-        // Derivar chave simétrica a partir do segredo compartilhado
-        SecretKey chaveSimetrica = servidor.derivarChaveSimetrica(sharedSecret);
-
-        // Cifrar mensagem para enviar ao cliente
-        byte[] mensagemCifrada = servidor.cifrarMensagemSimetrica(chaveSimetrica, "Mensagem secreta do servidor".getBytes(StandardCharsets.UTF_8));
-
-        // Enviar mensagem cifrada para o cliente
-        // Simulação: Enviar mensagem cifrada para o cliente
+        // Exclui a chave do HSM
+        // api.deleteKeyIfExists(keyId);
+        System.out.println("Chave excluída do HSM.");
     }
 }

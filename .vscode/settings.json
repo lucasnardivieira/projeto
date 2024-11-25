@@ -3,6 +3,8 @@
     "java.project.outputPath": "bin",
     "java.project.referencedLibraries": [
         "lib/**/*.jar",
-        "c:\\Users\\lucas\\Downloads\\tacndjavalib.jar"
+        "c:\\Users\\lucas\\Downloads\\tacndjavalib.jar",
+        "d:\\Lucas\\Downloads\\tacndjavalib.jar",
+        "d:\\Lucas\\Downloads\\dinamo-hsm-4.13.0.jar"
     ]
 }

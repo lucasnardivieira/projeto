@@ -1,83 +1,51 @@
+import com.dinamonetworks.Dinamo;
+import com.dinamonetworks.TacException;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
-import javax.crypto.*;
+import java.net.*;
+import java.io.*;
 import com.dinamonetworks.*;
 import br.com.trueaccess.*;
 
 public class Cliente {
+    static String hsmIp = "187.33.9.132";
+    static String hsmUser = "utfpr1";
+    static String hsmUserPassword = "segcomp20241";
 
-    private HSMClient hsmClient;
+    public static void main(String[] args) throws TacException, IOException {
+        // Inicia a conexão com o HSM
+        Dinamo api = new Dinamo();
+        api.openSession(hsmIp, hsmUser, hsmUserPassword);
 
-    public Cliente() throws Exception {
-        // Inicializar o cliente HSM
-        this.hsmClient = new HSMClient();
-    }
+        // Conecta-se ao servidor
+        Socket socket = new Socket("localhost", 5000);
+        System.out.println("Conectado ao servidor!");
 
-    public KeyPair gerarParDeChavesAssimetricas() throws Exception {
-        return hsmClient.generateKeyPair();
-    }
+        DataInputStream in = new DataInputStream(socket.getInputStream());
+        DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
-    public byte[] encapsularChavePublica(Key publicKey) throws Exception {
-        return hsmClient.encapsulateKey(publicKey);
-    }
+        // Mensagem a ser enviada
+        String mensagemOriginal = "Mensagem secreta para o servidor!";
+        byte[] mensagem = mensagemOriginal.getBytes(StandardCharsets.UTF_8);
 
-    public SecretKey derivarChaveSimetrica(byte[] sharedSecret) throws Exception {
-        MessageDigest hash = MessageDigest.getInstance("SHA-256");
-        byte[] keyBytes = hash.digest(sharedSecret);
-        return new SecretKeySpec(Arrays.copyOf(keyBytes, 16), "AES");
-    }
+        // Envia a mensagem para o servidor
+        out.writeInt(mensagem.length);
+        out.write(mensagem);
+        out.flush();
 
-    public byte[] cifrarMensagemSimetrica(SecretKey key, byte[] message) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES");
-        cipher.init(Cipher.ENCRYPT_MODE, key);
-        return cipher.doFinal(message);
-    }
+        // Recebe a mensagem cifrada do servidor
+        int length = in.readInt();
+        byte[] mensagemCifrada = new byte[length];
+        in.readFully(mensagemCifrada);
 
-    public byte[] decifrarMensagemSimetrica(SecretKey key, byte[] cipherText) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES");
-        cipher.init(Cipher.DECRYPT_MODE, key);
-        return cipher.doFinal(cipherText);
-    }
+        // Descriptografa a mensagem recebida
+        byte[] iv = new byte[16];  // IV simples com zeros
+        String keyId = "key_aes_example"; // Chave AES usada no servidor
+        byte[] mensagemDecifrada = api.decrypt(keyId, mensagemCifrada, iv, TacNDJavaLib.D_PKCS5_PADDING, TacNDJavaLib.MODE_CBC);
 
-    public byte[] assinarMensagem(byte[] message, PrivateKey privateKey) throws Exception {
-        Signature signature = Signature.getInstance("SHA256withRSA");
-        signature.initSign(privateKey);
-        signature.update(message);
-        return signature.sign();
-    }
+        // Exibe a mensagem descriptografada
+        System.out.println("Mensagem recebida e descriptografada: " + new String(mensagemDecifrada, StandardCharsets.UTF_8));
 
-    public boolean verificarAssinatura(byte[] message, byte[] signedMessage, PublicKey publicKey) throws Exception {
-        Signature signature = Signature.getInstance("SHA256withRSA");
-        signature.initVerify(publicKey);
-        signature.update(message);
-        return signature.verify(signedMessage);
-    }
-
-    public static void main(String[] args) throws Exception {
-        Cliente cliente = new Cliente();
-
-        // Gerar par de chaves assimétricas
-        KeyPair keyPairCliente = cliente.gerarParDeChavesAssimetricas();
-
-        // Enviar chave pública do cliente para o servidor
-        // Simulação: Aqui você implementaria a lógica para enviar a chave pública via rede
-
-        // Receber a chave encapsulada ou pública do servidor e derivar o segredo compartilhado
-        // Simulação: Receber a resposta do servidor e derivar o segredo
-
-        // Derivar chave simétrica a partir do segredo compartilhado
-        SecretKey chaveSimetrica = cliente.derivarChaveSimetrica(sharedSecret);
-
-        // Receber mensagem cifrada do servidor e decifrar
-        byte[] mensagemDecifrada = cliente.decifrarMensagemSimetrica(chaveSimetrica, mensagemCifrada);
-
-        // Gerar par de chaves para assinatura
-        KeyPair keyPairAssinatura = cliente.gerarParDeChavesAssimetricas();
-
-        // Assinar a mensagem decifrada
-        byte[] assinatura = cliente.assinarMensagem(mensagemDecifrada, keyPairAssinatura.getPrivate());
-
-        // Enviar mensagem assinada para o servidor
-        // Simulação: Enviar mensagem e assinatura para o servidor
+        // Fecha a conexão
+        socket.close();
     }
 }
