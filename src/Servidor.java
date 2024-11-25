@@ -1,7 +1,6 @@
 import com.dinamonetworks.Dinamo;
 import com.dinamonetworks.TacException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.net.*;
 import java.io.*;
 import com.dinamonetworks.*;
@@ -17,9 +16,11 @@ public class Servidor {
         Dinamo api = new Dinamo();
         api.openSession(hsmIp, hsmUser, hsmUserPassword);
 
-        // Cria uma chave AES no HSM
-        String keyId = "key_aes_example";
-        api.createKey(keyId, TacNDJavaLib.ALG_AES_256);
+        // Gera a chave assimétrica no HSM
+        String keyIdServer = "key_server";
+        byte[] publicKeyServer = api.genEcdhKey(0, keyIdServer, new byte[0]);  // Passando um vetor vazio
+        /System.out.println("Chave pública do servidor: " + new String(publicKeyServer));
+
 
         // Configura o servidor
         ServerSocket serverSocket = new ServerSocket(5000);
@@ -30,26 +31,43 @@ public class Servidor {
         DataInputStream in = new DataInputStream(clientSocket.getInputStream());
         DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
 
-        // Recebe a mensagem do cliente
+        // Recebe a chave pública do cliente (Pa)
         int length = in.readInt();
-        byte[] mensagemRecebida = new byte[length];
-        in.readFully(mensagemRecebida);
+        byte[] publicKeyCliente = new byte[length];
+        in.readFully(publicKeyCliente);
+        System.out.println("Chave pública do cliente recebida");
 
-        // Criptografa a mensagem com a chave AES
-        byte[] iv = new byte[16];  // IV simples com zeros
-        byte[] mensagemCifrada = api.encrypt(keyId, mensagemRecebida, iv, TacNDJavaLib.D_PKCS5_PADDING, TacNDJavaLib.MODE_CBC);
+        // Gera o segredo compartilhado utilizando a chave pública do cliente
+        byte[] secretShared = api.genEcdhKey(2, keyIdServer, publicKeyCliente);
 
-        // Envia a mensagem cifrada de volta ao cliente
+        // Deriva a chave simétrica K a partir do segredo compartilhado
+        byte[] keySymmetric = new byte[32];  // Vamos derivar uma chave simétrica de 256 bits
+        System.arraycopy(secretShared, 0, keySymmetric, 0, 32);
+
+        // Envia a chave pública do servidor ou C1 (no caso de KEM) para o cliente
+        //out.writeInt(publicKeyServer.length);
+        //out.write(publicKeyServer);
+        out.flush();
+
+        // Envia a mensagem cifrada (C2) para o cliente utilizando a chave simétrica K
+        String mensagem = "Mensagem secreta do servidor!";
+        byte[] mensagemBytes = mensagem.getBytes(StandardCharsets.UTF_8);
+        byte[] mensagemCifrada = api.encrypt(keyIdServer, mensagemBytes);
         out.writeInt(mensagemCifrada.length);
         out.write(mensagemCifrada);
         out.flush();
 
+        // Recebe a mensagem com a assinatura
+        int lengthSig = in.readInt();
+        byte[] signedMessage = new byte[lengthSig];
+        in.readFully(signedMessage);
+
+        // Verifica a assinatura da mensagem
+        int verifyResult = api.verifySignature(keyIdServer, 1, signedMessage, mensagemBytes); // Assume SHA-256 (1)
+        System.out.println("Verificação de assinatura: " + (verifyResult == 0 ? "Válida" : "Inválida"));
+
         // Fecha a conexão
         clientSocket.close();
         serverSocket.close();
-
-        // Exclui a chave do HSM
-        // api.deleteKeyIfExists(keyId);
-        System.out.println("Chave excluída do HSM.");
     }
 }

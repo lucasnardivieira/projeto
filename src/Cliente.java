@@ -16,6 +16,11 @@ public class Cliente {
         Dinamo api = new Dinamo();
         api.openSession(hsmIp, hsmUser, hsmUserPassword);
 
+        // Gera a chave assimétrica no HSM
+        String keyIdClient = "key_client";
+        //byte[] publicKeyClient = api.genEcdhKey(1, keyIdClient, new byte[0]); // Gerando chave pública do cliente
+        //System.out.println("Chave pública do cliente: " + new String(publicKeyClient));
+
         // Conecta-se ao servidor
         Socket socket = new Socket("localhost", 5000);
         System.out.println("Conectado ao servidor!");
@@ -23,27 +28,44 @@ public class Cliente {
         DataInputStream in = new DataInputStream(socket.getInputStream());
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
-        // Mensagem a ser enviada
-        String mensagemOriginal = "Mensagem secreta para o servidor!";
-        byte[] mensagem = mensagemOriginal.getBytes(StandardCharsets.UTF_8);
-
-        // Envia a mensagem para o servidor
-        out.writeInt(mensagem.length);
-        out.write(mensagem);
+        // Envia a chave pública do cliente (Pa) para o servidor
+        //out.writeInt(publicKeyClient.length);
+        //out.write(publicKeyClient);
         out.flush();
 
-        // Recebe a mensagem cifrada do servidor
+        // Recebe a chave pública do servidor ou C1 (no caso de KEM)
         int length = in.readInt();
-        byte[] mensagemCifrada = new byte[length];
+        byte[] publicKeyServer = new byte[length];
+        in.readFully(publicKeyServer);
+        System.out.println("Chave pública do servidor recebida");
+
+        // Gera o segredo compartilhado utilizando a chave pública do servidor
+        byte[] secretShared = api.genEcdhKey(2, keyIdClient, publicKeyServer);
+
+        // Deriva a chave simétrica K a partir do segredo compartilhado
+        byte[] keySymmetric = new byte[32];  // Vamos derivar uma chave simétrica de 256 bits
+        System.arraycopy(secretShared, 0, keySymmetric, 0, 32);
+
+        // Recebe a mensagem cifrada (C2) do servidor
+        int lengthC2 = in.readInt();
+        byte[] mensagemCifrada = new byte[lengthC2];
         in.readFully(mensagemCifrada);
 
-        // Descriptografa a mensagem recebida
-        byte[] iv = new byte[16];  // IV simples com zeros
-        String keyId = "key_aes_example"; // Chave AES usada no servidor
-        byte[] mensagemDecifrada = api.decrypt(keyId, mensagemCifrada, iv, TacNDJavaLib.D_PKCS5_PADDING, TacNDJavaLib.MODE_CBC);
+        // Descriptografa a mensagem utilizando a chave simétrica K
+        byte[] mensagemDecifrada = api.decrypt(keyIdClient, mensagemCifrada);
 
         // Exibe a mensagem descriptografada
         System.out.println("Mensagem recebida e descriptografada: " + new String(mensagemDecifrada, StandardCharsets.UTF_8));
+
+        // Gera um par de chaves para assinatura digital
+        byte[] signature = api.signHash(keyIdClient, 1, mensagemDecifrada);  // Assume SHA-256 (1)
+
+        // Envia a mensagem e a assinatura para o servidor
+        out.writeInt(mensagemDecifrada.length);
+        out.write(mensagemDecifrada);
+        out.writeInt(signature.length);
+        out.write(signature);
+        out.flush();
 
         // Fecha a conexão
         socket.close();
